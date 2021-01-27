@@ -29,7 +29,7 @@ parser.add_argument('--Nstep', type=int, default=2, help='Number of displacement
 
 parser.add_argument('--n', type=float, default=1., help='The hyperparameter n in the smoothing kernel. n determines the relative weight between the large scale and the small scale in the loss function.')
 
-parser.add_argument('--save', type=str, default='./', help='Where to save the optimized parameters.')
+parser.add_argument('--save', type=str, default='/global/cscratch1/sd/biwei/LDL/', help='Where to save the optimized parameters.')
 
 parser.add_argument('--restore', type=str, help='Path to load in LDL parameters.')
 

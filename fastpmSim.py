@@ -15,7 +15,7 @@ parser.add_argument('--Nmesh', type=int, default=625, help='The resolution of Fa
 
 parser.add_argument('--Nstep', type=int, default=10, help='Number of time steps of FastPM.')
 
-parser.add_argument('--save', type=str, default='/global/cscratch1/sd/biwei/TNG_fastpm', help='Path to save the snapshots.')
+parser.add_argument('--save', type=str, default='/global/cscratch1/sd/biwei/LDL', help='Path to save the snapshots.')
 
 args = parser.parse_args()
 
@@ -85,15 +85,6 @@ def monitor(action, ai, ac, af, state, event):
             if state.pm.comm.rank == 0:
                 print('Finish writing snapshot at redshift %.2f' % (1./a-1.), 'Time:', time.time()-t)
 
-            #mass = 1.0 * state.pm.Nmesh.prod() / state.pm.comm.allreduce(len(X), op=MPI.SUM)
-            #layout = pm.decompose(X)
-            #pos1 = layout.exchange(X)
-            #del X 
-
-            #TNGmap = state.pm.create(type="real")
-            #TNGmap.paint(pos1, mass=mass, layout=None, hold=False)
-            #FieldMesh(TNGmap).save('dmmap_Nmesh64_z%.2f' % (1/af-1))
-            
     a0 = np.array(af)
     X0 = state.X
     V0 = state.V

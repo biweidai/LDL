@@ -209,7 +209,7 @@ def load_TNG_data(TNG_basepath, snapNum, partType, field, mdi=None, comm=MPI.COM
     #mdi (0 or 1 or 2) needs to be provided for reading vector fields (e.g., coordinate / velocity).
 
     filename = TNG_basepath + '/snapdir_' + str(snapNum).zfill(3) + '/' + partType + '_' + field
-    if mdi:
+    if mdi is not None:
         if mdi == 0:
             filename = filename + '_x'
         elif mdi == 1:
@@ -255,7 +255,7 @@ def load_TNG_map(TNG_basepath, snapNum, field, pm):
                 pos.append(load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType='dm', field='Coordinates', mdi=mdi))
             pos = np.array(pos).T
 
-            mass = 1.0 * pm.Nmesh.prod() / comm.allreduce(len(pos), op=MPI.SUM)
+            mass = 1.0 * pm.Nmesh.prod() / pm.comm.allreduce(len(pos), op=MPI.SUM)
             layout = pm.decompose(pos)
             pos1 = layout.exchange(pos)
             del pos
