@@ -35,3 +35,6 @@ python LDL.py --target=TARGET --TNGpath=TNG_PATH --TNGDarkpath=TNGDARK_PATH --sn
 
 The LDL maps will be generated automatically after the training is finished. To generate LDL maps with pretrained parameters, run LDL.py with --restore and --evaluateOnly arguments.
 
+## Pretrained models
+
+The best fit parameters for reproducing the results in the [paper](https://arxiv.org/abs/2010.02926) will be uploaded soon. 

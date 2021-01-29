@@ -202,11 +202,14 @@ def lossfunc(residue, mask, comm=MPI.COMM_WORLD, L1=True):
 
     residue = unary.absolute(residue)
     loss = masking(residue, mask)
+    Npixel = np.sum(mask)
     if L1:
         loss = linalg.sum(loss)
     else:
         loss = linalg.sum(loss**2)
     loss = mpi.allreduce(loss, comm=comm)
+    Npixel = mpi.allreduce(Npixel, comm=comm)
+    loss = loss / Npixel
     return loss
 
 
