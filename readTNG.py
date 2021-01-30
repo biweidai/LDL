@@ -220,13 +220,13 @@ def load_TNG_data(TNG_basepath, snapNum, partType, field, mdi=None, comm=MPI.COM
             raise ValueError
         mdi = [mdi]
 
-    try:
-        f = open(filename, 'rb')
-    except:
-        if comm.rank == 0:
+    if comm.rank == 0:
+        if not os.path.exists(filename):
             loadSubset(TNG_basepath, snapNum, partType, fields=field, mdi=mdi, writefile=filename)   #TODO: loadSubset with MPI
-        f = open(filename, 'rb')
-    
+
+    comm.Barrier()
+
+    f = open(filename, 'rb')
     Np = int(os.path.getsize(filename) / 4)
     start = comm.rank * Np // comm.size
     end = (comm.rank + 1) * Np // comm.size

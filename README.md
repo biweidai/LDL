@@ -31,6 +31,8 @@ To train LDL (at redshift 0) with TNGDark input, run the following commands:
 python LDL.py --target=TARGET --TNGpath=TNG_PATH --TNGDarkpath=TNGDARK_PATH --snapNum=99 --Nmesh=625 --Nstep=2 --n=1 --save=SAVE_PATH
 ```
 
+Note: For the first time training, the code needs to read TNG data from HDF5 files for painting the target map. This part does not support MPI (only rank 0 reads the files, and the other ranks wait), and takes about 6 minutes on Nersc cori. The target maps will be saved, and for the next time the reading HDF5 part will be skipped.
+
 ## Evaluation
 
 The LDL maps will be generated automatically after the training is finished. To generate LDL maps with pretrained parameters, run LDL.py with --restore and --evaluateOnly arguments.

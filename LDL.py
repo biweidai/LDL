@@ -106,14 +106,14 @@ if not args.evaluateOnly:
         else:
             assert len(x0) == 5 * args.Nstep + 3
     else:
-        x0 = [0.01, 0.5, 0.5, 5., 0.] * args.Nstep
+        x0 = [0.01, 0.5, 0.2, 5., 0.] * args.Nstep
         if baryon:
             x0 += [1., targetmap.csum() / comm.allreduce(len(X), op=MPI.SUM), 0.]
         x0 = np.array(x0)
     
-    bounds = [(None, None), (1e-2,3), (0.03,2*np.pi*args.Nmesh/205.), (0.03,2*np.pi*args.Nmesh/205.), (-4,4)] * args.Nstep
+    bounds = [(None, None), (0.1,2), (0.1,np.pi*args.Nmesh/205.), (0.1,np.pi*args.Nmesh/205.), (-4,4)] * args.Nstep
     if baryon:
-        bounds += [(1e-3,None), (0., None), (None, None)]
+        bounds += [(0.1,None), (0., None), (None, None)]
     
     #train
     res = minimize(loss, x0=x0, method='L-BFGS-B', args=(residue_model, loss_train_model, loss_validate_model), jac=loss.derivative, bounds=bounds, options={'maxiter': 2000, 'disp': False})
