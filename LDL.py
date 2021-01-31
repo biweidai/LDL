@@ -11,7 +11,7 @@ from mpi4py import MPI
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--target', type=str, default='Mstar', choices=['dm', 'Mstar', 'nHI'], help='The target field.')
+parser.add_argument('--target', type=str, default='Mstar', choices=['dm', 'Mstar', 'nHI', 'kSZ', 'tSZ_ne', 'tSZ_T', 'Xray_ne', 'Xray_T'], help='The target field.')
 
 parser.add_argument('--FastPMpath', type=str, help='The path to load in FastPM particles. If not provided, TNGDark will be the input.')
 
@@ -32,6 +32,8 @@ parser.add_argument('--n', type=float, default=1., help='The hyperparameter n in
 parser.add_argument('--save', type=str, default='/global/cscratch1/sd/biwei/LDL/', help='Where to save the optimized parameters.')
 
 parser.add_argument('--restore', type=str, help='Path to load in LDL parameters.')
+
+parser.add_argument('--restore_ne', type=str, help='Path to load in the LDL parameters for ne. Only applicable when fitting the temperature of tSZ and Xray.')
 
 parser.add_argument('--evaluateOnly', action='store_true', help='The path to load in pretrained LDL parameters.')
 
@@ -64,9 +66,34 @@ else:
 if not args.evaluateOnly:
     #target map
     if args.target == 'dm':
+        assert args.FastPMpath
         targetmap = load_TNG_map(TNG_basepath=args.TNGDarkpath, snapNum=args.snapNum, field=args.target, pm=pm)
-    else:
+    elif args.target in ['Mstar', 'nHI']:
         targetmap = load_TNG_map(TNG_basepath=args.TNGpath, snapNum=args.snapNum, field=args.target, pm=pm)
+    elif args.target == 'kSZ':
+        targetmap = load_TNG_map(TNG_basepath=args.TNGpath, snapNum=args.snapNum, field='ne', pm=pm)
+    elif args.target in ['tSZ_ne', 'Xray_ne']:
+        targetmap_ne = load_TNG_map(TNG_basepath=args.TNGpath, snapNum=args.snapNum, field='ne', pm=pm)
+        targetmap = load_TNG_map(TNG_basepath=args.TNGpath, snapNum=args.snapNum, field='nT', pm=pm)
+        select = targetmap_ne <= 0
+        targetmap_T = targetmap / targetmap_ne
+        targetmap_T[select] = 0
+        if args.target == 'Xray_ne':
+            targetmap = targetmap_ne**2 * targetmap_T**0.5 
+        del targetmap_ne
+    elif args.target in ['tSZ_T', 'Xray_T']:
+        targetmap = load_TNG_map(TNG_basepath=args.TNGpath, snapNum=args.snapNum, field='nT', pm=pm)
+        if args.target == 'Xray_T':
+            targetmap_ne = load_TNG_map(TNG_basepath=args.TNGpath, snapNum=args.snapNum, field='ne', pm=pm)
+            targetmap = targetmap_ne**1.5 * targetmap**0.5 
+            del targetmap_ne
+
+        param = np.loadtxt(args.restore_ne)
+        assert len(param) % 5 == 3
+        Nstep = len(param) // 5
+        model = LDL.build(X=X, pm=pm, Nstep=Nstep, baryon=True)
+        map_ne = model.compute('F', init=dict(param=param))
+        del model
 
     #split among training, validation and test set
     index = pm.mesh_coordinates()
@@ -92,10 +119,19 @@ if not args.evaluateOnly:
         L1 = True
     verbose = True
 
-    residue_model = smoothed_residue.build(X=X, pm=pm, Nstep=args.Nstep, target=targetmap, n=args.n, baryon=baryon)
+    if args.target == 'tSZ_ne':
+        residue_model = smoothed_residue.build(X=X, pm=pm, Nstep=args.Nstep, target=targetmap, n=args.n, baryon=baryon, index=1, field2=targetmap_T)
+    elif args.target == 'tSZ_T':
+        residue_model = smoothed_residue.build(X=X, pm=pm, Nstep=args.Nstep, target=targetmap, n=args.n, baryon=baryon, index=1, field2=map_ne)
+    elif args.target == 'Xray_ne':
+        residue_model = smoothed_residue.build(X=X, pm=pm, Nstep=args.Nstep, target=targetmap, n=args.n, baryon=baryon, index=2, field2=targetmap_T**0.5)
+    elif args.target == 'Xray_T':
+        residue_model = smoothed_residue.build(X=X, pm=pm, Nstep=args.Nstep, target=targetmap, n=args.n, baryon=baryon, index=0.5, field2=map_ne**2)
+    else:
+        residue_model = smoothed_residue.build(X=X, pm=pm, Nstep=args.Nstep, target=targetmap, n=args.n, baryon=baryon)
+    save = args.save + '/' + args.target + '_snap' + str(args.snapNum).zfill(3) + '_Nmesh%d_Nstep%d_n%.2f_bestparam.txt' % (args.Nmesh, args.Nstep, args.n)
     loss_train_model = lossfunc.build(mask=mask_train, comm=comm, L1=L1)
     loss_validate_model = lossfunc.build(mask=mask_validate, comm=comm, L1=L1)
-    save = args.save + '/' + args.target + '_snap' + str(args.snapNum).zfill(3) + '_Nmesh%d_Nstep%d_n%.2f_bestparam.txt' % (args.Nmesh, args.Nstep, args.n)
     loss = MemoizeJac(loss_and_gradient, save=save, verbose=verbose, comm=comm)
     
     #initial guess
@@ -136,5 +172,47 @@ else:
 model = LDL.build(X=X, pm=pm, Nstep=args.Nstep, baryon=baryon)
 LDLmap = model.compute('F', init=dict(param=param))
 
-save = args.save + '/' + args.target + '_snap' + str(args.snapNum).zfill(3) + '_Nmesh%d_Nstep%d_n%.2f_map' % (args.Nmesh, args.Nstep, args.n)
-FieldMesh(LDLmap).save(save)
+if args.target in ['dm', 'Mstar', 'nHI']:
+    save = args.save + '/' + args.target + '_snap' + str(args.snapNum).zfill(3) + '_Nmesh%d_Nstep%d_n%.2f_map' % (args.Nmesh, args.Nstep, args.n)
+    FieldMesh(LDLmap).save(save)
+
+elif args.target == 'kSZ':
+    if args.FastPMpath:
+        X = File(args.FastPMpath)['Position']
+        X = np.array(X[start:end]).astype(np.float32)
+        Vz = File(args.FastPMpath)['Velocity']
+        Vz = np.array(Vz[start:end, 2]).astype(np.float32)
+    else:
+        from readTNG import scalefactor
+        a = scalefactor(args.TNGDarkpath, args.snapNum)
+        Vz = load_TNG_data(TNG_basepath=args.TNGDarkpath, snapNum=args.snapNum, partType='dm', field='Velocities', mdi=2) * a**0.5
+    layout = pm.decompose(X)
+    X = layout.exchange(X)
+    Vz = layout.exchange(Vz)
+    map_vz = pm.create(mode="real")
+    map_vz.paint(X, mass=Vz, layout=None, hold=False)
+    map_delta = pm.create(mode="real")
+    map_delta.paint(X, mass=1., layout=None, hold=False)
+    select = map_delta > 0
+    map_vz[select] = map_vz[select] / map_delta[select]
+    map_vz[~select] = 0
+    
+    LDLmap = LDLmap * map_vz
+    save = args.save + '/' + args.target + '_snap' + str(args.snapNum).zfill(3) + '_Nmesh%d_Nstep%d_n%.2f_map' % (args.Nmesh, args.Nstep, args.n)
+    FieldMesh(LDLmap).save(save)
+
+elif args.target in ['tSZ_T', 'Xray_T']:
+    param = np.loadtxt(args.restore_ne)
+    assert len(param) % 5 == 3
+    Nstep = len(param) // 5
+    model = LDL.build(X=X, pm=pm, Nstep=Nstep, baryon=True)
+    map_ne = model.compute('F', init=dict(param=param))
+    del model
+
+    if args.target == 'tSZ_T':
+        LDLmap = LDLmap * map_ne
+        save = args.save + '/tSZ_snap' + str(args.snapNum).zfill(3) + '_Nmesh%d_Nstep%d_n%.2f_map' % (args.Nmesh, args.Nstep, args.n)
+    elif args.target == 'Xray_T':
+        LDLmap = LDLmap**0.5 * map_ne**2
+        save = args.save + '/Xray_snap' + str(args.snapNum).zfill(3) + '_Nmesh%d_Nstep%d_n%.2f_map' % (args.Nmesh, args.Nstep, args.n)
+    FieldMesh(LDLmap).save(save)

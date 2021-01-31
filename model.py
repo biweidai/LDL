@@ -179,9 +179,13 @@ def smoothing(n):
     return kernel
 
 @autooperator('param->residue')
-def smoothed_residue(param, X, pm, Nstep, target, n, baryon=True):
+def smoothed_residue(param, X, pm, Nstep, target, n, baryon=True, index=1, field2=None):
 
     F = LDL(param, X, pm, Nstep, baryon=baryon)
+    if index != 1:
+        F = F ** index
+    if field2 is not None:
+        F = F * field2
 
     #residue field
     residue = F - target 

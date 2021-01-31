@@ -250,81 +250,103 @@ def n_cm3(mass, X, a, Nmesh):
     return Msun10/h / (a*BoxSize/Nmesh*Mpc_cm/h)**3 * mass*XH/mp*X
 
 
+def scalefactor(TNG_basepath, snapNum):
+    with h5py.File(snapPath(TNG_basepath, snapNum), 'r') as f:
+        header = dict(f['Header'].attrs.items())
+        z = header['Redshift']
+        a = 1. / (1. + z)
+    return a
+
+
 def load_TNG_map(TNG_basepath, snapNum, field, pm):
 
-    assert field in ['dm', 'Mstar', 'ne', 'T', 'nHI', 'neVz', 'MstarVz']
+    assert field in ['dm', 'Mstar', 'ne', 'nT', 'nHI', 'neVz', 'MstarVz']
 
     #Try directly loading map. If it does not exist, paint the map and save it for future use.
     address = TNG_basepath + '/snapdir_' + str(snapNum).zfill(3) + '/' + field + 'map_Nmesh' + str(pm.Nmesh[0])
     try:
         TNGmap = BigFileMesh(address, dataset='Field').to_real_field()
     except:
+
         if field == 'dm':
-            pos = []
-            for mdi in range(3):
-                pos.append(load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType='dm', field='Coordinates', mdi=mdi))
-            pos = np.array(pos).T
+            partType = 'dm'
+        elif field in ['Mstar', 'Mstar_vz']:
+            partType = 'stars'
+        elif field in ['ne', 'nT', 'nHI', 'ne_vz']:
+            partType = 'gas'
 
-            mass = 1.0 * pm.Nmesh.prod() / pm.comm.allreduce(len(pos), op=MPI.SUM)
-            layout = pm.decompose(pos)
-            pos1 = layout.exchange(pos)
-            del pos
-
-            TNGmap = pm.create(type="real")
-            TNGmap.paint(pos1, mass=mass, layout=None, hold=False)
-            del pos1
-
-        elif field == 'Mstar':
-            mass = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType='stars', field='Masses')
-            pos = np.zeros((len(mass), 3), dtype=np.float32)
-            for mdi in range(3):
-                pos[:,mdi] = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType='stars', field='Coordinates', mdi=mdi)
-
-            layout = pm.decompose(pos)
-            pos1 = layout.exchange(pos)
-            del pos
-            mass1 = layout.exchange(mass)
-            del mass
-
-            TNGmap = pm.create(type="real")
-            TNGmap.paint(pos1, mass=mass1, layout=None, hold=False)
-            del pos1, mass1
+        if field == 'Mstar':
+            mass = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='Masses')
 
         elif field == 'ne':
-            raise NotImplementedError
+            gasmass = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='Masses')
+            Xe = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='ElectronAbundance')
+            a = scalefactor(TNG_basepath, snapNum) 
+            mass = n_cm3(gasmass, Xe, a, pm.Nmesh[0])
+            del gasmass, Xe
 
-        elif field == 'T':
-            raise NotImplementedError
+        elif field == 'nT':
+
+            def temperature(Xe, u):
+                XH = 0.76
+                kb = 1.38064852e-23
+                mp = 1.6726219e-27
+                ufac = 1e6 #u: (km/s)^2 -> (m/s)^2
+                mu = 4./(1.+3.*XH+4.*XH*Xe) * mp
+                T = 2./3. * ufac * u / kb * mu
+                return T
+
+            Xe = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='ElectronAbundance')
+            u = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='InternalEnergy')
+            T = temperature(Xe, u)
+            del u
+            gasmass = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='Masses')
+            a = scalefactor(TNG_basepath, snapNum) 
+            ne = n_cm3(gasmass, Xe, a, pm.Nmesh[0])
+            del gasmass, Xe
+            mass = ne * T
+            del ne, T
 
         elif field == 'nHI':
-
-            gasmass = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType='gas', field='Masses')
-            XHI = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType='gas', field='NeutralHydrogenAbundance')
-            with h5py.File(snapPath(TNG_basepath, snapNum), 'r') as f:
-                header = dict(f['Header'].attrs.items())
-                z = header['Redshift']
-                a = 1. / (1. + z)
+            gasmass = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='Masses')
+            XHI = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='NeutralHydrogenAbundance')
+            a = scalefactor(TNG_basepath, snapNum) 
             mass = n_cm3(gasmass, XHI, a, pm.Nmesh[0])
             del gasmass, XHI
-            pos = np.zeros((len(mass), 3), dtype=np.float32)
-            for mdi in range(3):
-                pos[:,mdi] = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType='gas', field='Coordinates', mdi=mdi)
 
-            layout = pm.decompose(pos)
-            pos1 = layout.exchange(pos)
-            del pos
+        elif field == 'ne_vz':
+            gasmass = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='Masses')
+            Xe = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='ElectronAbundance')
+            a = scalefactor(TNG_basepath, snapNum) 
+            ne = n_cm3(gasmass, Xe, a, pm.Nmesh[0])
+            vz = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='Velocities', mdi=2) * a**0.5
+            mass = ne * vz
+            del ne, vz
+
+        elif field == 'Mstar_vz':
+            mass = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='Masses')
+            a = scalefactor(TNG_basepath, snapNum) 
+            vz = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='Velocities', mdi=2) * a**0.5
+            mass = mass * vz
+            del vz
+
+        pos = []
+        for mdi in range(3):
+            pos.append(load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='Coordinates', mdi=mdi))
+        pos = np.array(pos).T
+
+        layout = pm.decompose(pos)
+        pos1 = layout.exchange(pos)
+        del pos
+        if field == 'dm':
+            mass1 = 1.0 * pm.Nmesh.prod() / pm.comm.allreduce(len(pos), op=MPI.SUM)
+        else:
             mass1 = layout.exchange(mass)
             del mass
 
-            TNGmap = pm.create(type="real")
-            TNGmap.paint(pos1, mass=mass1, layout=None, hold=False)
-            del pos1, mass1
-
-        elif field == 'ne_vz':
-            raise NotImplementedError
-
-        elif field == 'Mstar_vz':
-            raise NotImplementedError
+        TNGmap = pm.create(type="real")
+        TNGmap.paint(pos1, mass=mass1, layout=None, hold=False)
+        del pos1, mass1
         
         FieldMesh(TNGmap).save(address)
 
