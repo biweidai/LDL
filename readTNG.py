@@ -240,6 +240,16 @@ def load_TNG_data(TNG_basepath, snapNum, partType, field, mdi=None, comm=MPI.COM
     return particle
 
 
+def n_cm3(mass, X, a, Nmesh):
+    h = 0.6774
+    XH = 0.76
+    mp = 1.6726219e-27
+    Msun10 = 1.989e40
+    BoxSize = 205.
+    Mpc_cm = 3.085678e24
+    return Msun10/h / (a*BoxSize/Nmesh*Mpc_cm/h)**3 * mass*XH/mp*X
+
+
 def load_TNG_map(TNG_basepath, snapNum, field, pm):
 
     assert field in ['dm', 'Mstar', 'ne', 'T', 'nHI', 'neVz', 'MstarVz']
@@ -288,18 +298,14 @@ def load_TNG_map(TNG_basepath, snapNum, field, pm):
 
         elif field == 'nHI':
 
-            def nHI(mass, XHI):
-                h = 0.6774
-                XH = 0.76
-                mp = 1.6726219e-27
-                Msun10 = 1.989e40
-                BoxSize = 205.
-                Mpc_cm = 3.085677581e24
-                return Msun10/h / (BoxSize/args.Nmesh*Mpc_cm/h)**3 * mass*XH/mp*XHI
-
             gasmass = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType='gas', field='Masses')
             XHI = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType='gas', field='NeutralHydrogenAbundance')
-            mass = nHI(gasmass, XHI)
+            with h5py.File(snapPath(TNG_basepath, snapNum), 'r') as f:
+                header = dict(f['Header'].attrs.items())
+                z = header['Redshift']
+                a = 1. / (1. + z)
+            mass = n_cm3(gasmass, XHI, a, pm.Nmesh[0])
+            del gasmass, XHI
             pos = np.zeros((len(mass), 3), dtype=np.float32)
             for mdi in range(3):
                 pos[:,mdi] = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType='gas', field='Coordinates', mdi=mdi)
