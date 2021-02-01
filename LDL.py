@@ -62,7 +62,7 @@ else:
     for mdi in range(3):
         X.append(load_TNG_data(TNG_basepath=args.TNGDarkpath, snapNum=args.snapNum, partType='dm', field='Coordinates', mdi=mdi))
     X = np.array(X).T
-    
+
 if not args.evaluateOnly:
     #target map
     if args.target == 'dm':
@@ -72,21 +72,30 @@ if not args.evaluateOnly:
         targetmap = load_TNG_map(TNG_basepath=args.TNGpath, snapNum=args.snapNum, field=args.target, pm=pm)
     elif args.target == 'kSZ':
         targetmap = load_TNG_map(TNG_basepath=args.TNGpath, snapNum=args.snapNum, field='ne', pm=pm)
+        targetmap *= 1e5 #The values are too small. Multiply the field with 1e5.
     elif args.target in ['tSZ_ne', 'Xray_ne']:
         targetmap_ne = load_TNG_map(TNG_basepath=args.TNGpath, snapNum=args.snapNum, field='ne', pm=pm)
         targetmap = load_TNG_map(TNG_basepath=args.TNGpath, snapNum=args.snapNum, field='nT', pm=pm)
         select = targetmap_ne <= 0
         targetmap_T = targetmap / targetmap_ne
         targetmap_T[select] = 0
+        targetmap_ne *= 1e5 #The values are too small. Multiply the field with 1e5.
+        targetmap_T *= 1e-5 #The values are too large. Multiply the field with 1e-5.
         if args.target == 'Xray_ne':
             targetmap = targetmap_ne**2 * targetmap_T**0.5 
+        bias = targetmap_ne.csum() / comm.allreduce(len(X), op=MPI.SUM) 
         del targetmap_ne
     elif args.target in ['tSZ_T', 'Xray_T']:
+        targetmap_ne = load_TNG_map(TNG_basepath=args.TNGpath, snapNum=args.snapNum, field='ne', pm=pm)
+        targetmap_ne *= 1e5 #The values are too small. Multiply the field with 1e5.
         targetmap = load_TNG_map(TNG_basepath=args.TNGpath, snapNum=args.snapNum, field='nT', pm=pm)
+        select = targetmap_ne <= 0
+        map_T = targetmap / targetmap_ne
+        map_T[select] = 0
+        bias = map_T.csum() / comm.allreduce(len(X), op=MPI.SUM) 
         if args.target == 'Xray_T':
-            targetmap_ne = load_TNG_map(TNG_basepath=args.TNGpath, snapNum=args.snapNum, field='ne', pm=pm)
             targetmap = targetmap_ne**1.5 * targetmap**0.5 
-            del targetmap_ne
+        del targetmap_ne, map_T
 
         param = np.loadtxt(args.restore_ne)
         assert len(param) % 5 == 3
@@ -128,7 +137,7 @@ if not args.evaluateOnly:
     elif args.target == 'Xray_T':
         residue_model = smoothed_residue.build(X=X, pm=pm, Nstep=args.Nstep, target=targetmap, n=args.n, baryon=baryon, index=0.5, field2=map_ne**2)
     else:
-        residue_model = smoothed_residue.build(X=X, pm=pm, Nstep=args.Nstep, target=targetmap, n=args.n, baryon=baryon)
+        residue_model = smoothed_residue.build(X=X, pm=pm, Nstep=args.Nstep, target=targetmap, n=args.n, baryon=baryon, index=1, field2=None)
     save = args.save + '/' + args.target + '_snap' + str(args.snapNum).zfill(3) + '_Nmesh%d_Nstep%d_n%.2f_bestparam.txt' % (args.Nmesh, args.Nstep, args.n)
     loss_train_model = lossfunc.build(mask=mask_train, comm=comm, L1=L1)
     loss_validate_model = lossfunc.build(mask=mask_validate, comm=comm, L1=L1)
@@ -144,10 +153,13 @@ if not args.evaluateOnly:
     else:
         x0 = [0.01, 0.5, 0.2, 5., 0.] * args.Nstep
         if baryon:
-            x0 += [1., targetmap.csum() / comm.allreduce(len(X), op=MPI.SUM), 0.]
+            if args.target in ['tSZ_ne', 'tSZ_T', 'Xray_ne', 'Xray_T']:
+                x0 += [1., bias, 0.]
+            else:
+                x0 += [1., targetmap.csum() / comm.allreduce(len(X), op=MPI.SUM), 0.]
         x0 = np.array(x0)
     
-    bounds = [(None, None), (0.1,2), (0.1,np.pi*args.Nmesh/205.), (0.1,np.pi*args.Nmesh/205.), (-4,4)] * args.Nstep
+    bounds = [(None, None), (0.05,2), (0.1,np.pi*args.Nmesh/205.), (0.1,np.pi*args.Nmesh/205.), (-4,4)] * args.Nstep
     if baryon:
         bounds += [(0.1,None), (0., None), (None, None)]
     
@@ -177,11 +189,12 @@ if args.target in ['dm', 'Mstar', 'nHI']:
     FieldMesh(LDLmap).save(save)
 
 elif args.target == 'kSZ':
+    LDLmap *= 1e-5 #The learned LDL map is actually 1e5*map_ne.
     if args.FastPMpath:
         X = File(args.FastPMpath)['Position']
         X = np.array(X[start:end]).astype(np.float32)
         Vz = File(args.FastPMpath)['Velocity']
-        Vz = np.array(Vz[start:end, 2]).astype(np.float32)
+        Vz = np.array(Vz[start:end])[:,2].astype(np.float32)
     else:
         from readTNG import scalefactor
         a = scalefactor(args.TNGDarkpath, args.snapNum)
@@ -189,9 +202,9 @@ elif args.target == 'kSZ':
     layout = pm.decompose(X)
     X = layout.exchange(X)
     Vz = layout.exchange(Vz)
-    map_vz = pm.create(mode="real")
+    map_vz = pm.create(type="real")
     map_vz.paint(X, mass=Vz, layout=None, hold=False)
-    map_delta = pm.create(mode="real")
+    map_delta = pm.create(type="real")
     map_delta.paint(X, mass=1., layout=None, hold=False)
     select = map_delta > 0
     map_vz[select] = map_vz[select] / map_delta[select]
@@ -210,9 +223,9 @@ elif args.target in ['tSZ_T', 'Xray_T']:
     del model
 
     if args.target == 'tSZ_T':
-        LDLmap = LDLmap * map_ne
+        LDLmap = LDLmap * map_ne #the 1e5 factor in ne map and 1e-5 factor in T map cancels.
         save = args.save + '/tSZ_snap' + str(args.snapNum).zfill(3) + '_Nmesh%d_Nstep%d_n%.2f_map' % (args.Nmesh, args.Nstep, args.n)
     elif args.target == 'Xray_T':
-        LDLmap = LDLmap**0.5 * map_ne**2
+        LDLmap = (LDLmap*1e5)**0.5 * (map_ne*1e-5)**2
         save = args.save + '/Xray_snap' + str(args.snapNum).zfill(3) + '_Nmesh%d_Nstep%d_n%.2f_map' % (args.Nmesh, args.Nstep, args.n)
     FieldMesh(LDLmap).save(save)
