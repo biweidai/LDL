@@ -62,7 +62,7 @@ else:
     for mdi in range(3):
         X.append(load_TNG_data(TNG_basepath=args.TNGDarkpath, snapNum=args.snapNum, partType='dm', field='Coordinates', mdi=mdi))
     X = np.array(X).T
-
+       
 if not args.evaluateOnly:
     #target map
     if args.target == 'dm':
@@ -151,7 +151,7 @@ if not args.evaluateOnly:
         else:
             assert len(x0) == 5 * args.Nstep + 3
     else:
-        x0 = [0.01, 0.5, 0.2, 5., 0.] * args.Nstep
+        x0 = [0.001, 0.5, 1., 8., 0.] * args.Nstep
         if baryon:
             if args.target in ['tSZ_ne', 'tSZ_T', 'Xray_ne', 'Xray_T']:
                 x0 += [1., bias, 0.]
@@ -159,7 +159,7 @@ if not args.evaluateOnly:
                 x0 += [1., targetmap.csum() / comm.allreduce(len(X), op=MPI.SUM), 0.]
         x0 = np.array(x0)
     
-    bounds = [(None, None), (0.05,2), (0.1,np.pi*args.Nmesh/205.), (0.1,np.pi*args.Nmesh/205.), (-4,4)] * args.Nstep
+    bounds = [(None, None), (0.05,2), (0.03,2*np.pi*args.Nmesh/205.), (0.03,2*np.pi*args.Nmesh/205.), (-4.5,4.5)] * args.Nstep
     if baryon:
         bounds += [(0.1,None), (0., None), (None, None)]
     
@@ -190,6 +190,8 @@ if args.target in ['dm', 'Mstar', 'nHI']:
 
 elif args.target == 'kSZ':
     LDLmap *= 1e-5 #The learned LDL map is actually 1e5*map_ne.
+    save = args.save + '/ne_snap' + str(args.snapNum).zfill(3) + '_Nmesh%d_Nstep%d_n%.2f_map' % (args.Nmesh, args.Nstep, args.n)
+    FieldMesh(LDLmap).save(save)
     if args.FastPMpath:
         X = File(args.FastPMpath)['Position']
         X = np.array(X[start:end]).astype(np.float32)

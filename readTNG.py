@@ -236,6 +236,7 @@ def load_TNG_data(TNG_basepath, snapNum, partType, field, mdi=None, comm=MPI.COM
 
     if field == 'Coordinates':
         particle /= 1000.
+        particle %= 205.
 
     return particle
 
@@ -270,9 +271,9 @@ def load_TNG_map(TNG_basepath, snapNum, field, pm):
 
         if field == 'dm':
             partType = 'dm'
-        elif field in ['Mstar', 'Mstar_vz']:
+        elif field in ['Mstar', 'MstarVz']:
             partType = 'stars'
-        elif field in ['ne', 'nT', 'nHI', 'ne_vz']:
+        elif field in ['ne', 'nT', 'nHI', 'neVz']:
             partType = 'gas'
 
         if field == 'Mstar':
@@ -314,7 +315,7 @@ def load_TNG_map(TNG_basepath, snapNum, field, pm):
             mass = n_cm3(gasmass, XHI, a, pm.Nmesh[0])
             del gasmass, XHI
 
-        elif field == 'ne_vz':
+        elif field == 'neVz':
             gasmass = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='Masses')
             Xe = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='ElectronAbundance')
             a = scalefactor(TNG_basepath, snapNum) 
@@ -323,7 +324,7 @@ def load_TNG_map(TNG_basepath, snapNum, field, pm):
             mass = ne * vz
             del ne, vz
 
-        elif field == 'Mstar_vz':
+        elif field == 'MstarVz':
             mass = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='Masses')
             a = scalefactor(TNG_basepath, snapNum) 
             vz = load_TNG_data(TNG_basepath=TNG_basepath, snapNum=snapNum, partType=partType, field='Velocities', mdi=2) * a**0.5
@@ -337,12 +338,12 @@ def load_TNG_map(TNG_basepath, snapNum, field, pm):
 
         layout = pm.decompose(pos)
         pos1 = layout.exchange(pos)
-        del pos
         if field == 'dm':
             mass1 = 1.0 * pm.Nmesh.prod() / pm.comm.allreduce(len(pos), op=MPI.SUM)
         else:
             mass1 = layout.exchange(mass)
             del mass
+        del pos
 
         TNGmap = pm.create(type="real")
         TNGmap.paint(pos1, mass=mass1, layout=None, hold=False)

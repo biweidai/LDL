@@ -88,8 +88,8 @@ def Displacement(param, X, pm, Nstep):
         #take parameters
         alpha = linalg.take(param, 5*i, axis=0)
         gamma = linalg.take(param, 5*i+1, axis=0)
-        kl = linalg.take(param, 5*i+2, axis=0)
-        ks = linalg.take(param, 5*i+3, axis=0)
+        kh = linalg.take(param, 5*i+2, axis=0)
+        kl = linalg.take(param, 5*i+3, axis=0)
         n = linalg.take(param, 5*i+4, axis=0)
         
         #delta**gamma
@@ -102,14 +102,14 @@ def Displacement(param, X, pm, Nstep):
 
         #Green's operator in Fourier space
         Filter = Literal(pm.create(type='complex', value=1).apply(lambda k, v: k.normp(2, zeromode=1e-8) ** 0.5))
+        kh = mpi.allbcast(kh, comm=pm.comm)
+        kh = linalg.broadcast_to(kh, eval(Filter, lambda x : x.shape)) 
         kl = mpi.allbcast(kl, comm=pm.comm)
         kl = linalg.broadcast_to(kl, eval(Filter, lambda x : x.shape)) 
-        ks = mpi.allbcast(ks, comm=pm.comm)
-        ks = linalg.broadcast_to(ks, eval(Filter, lambda x : x.shape)) 
         n = mpi.allbcast(n, comm=pm.comm)
         n = linalg.broadcast_to(n, eval(Filter, lambda x : x.shape)) 
         
-        Filter = - unary.exp(-Filter**2/ks**2) * unary.exp(-kl**2/Filter**2) * Filter**n
+        Filter = - unary.exp(-Filter**2/kl**2) * unary.exp(-kh**2/Filter**2) * Filter**n
         Filter = compensate2factor(Filter) 
 
         p = complex_mul(deltak, Filter)
@@ -148,19 +148,19 @@ def LDL(param, X, pm, Nstep, baryon=True):
 
     if baryon:
         #take parameters
-        gamma = linalg.take(param, 5*Nstep, axis=0)
-        bias0 = linalg.take(param, 5*Nstep+1, axis=0)
-        bias1 = linalg.take(param, 5*Nstep+2, axis=0)
+        mu = linalg.take(param, 5*Nstep, axis=0)
+        b1 = linalg.take(param, 5*Nstep+1, axis=0)
+        b0 = linalg.take(param, 5*Nstep+2, axis=0)
     
-        gamma = mpi.allbcast(gamma, comm=pm.comm)
-        gamma = linalg.broadcast_to(gamma, eval(delta, lambda x : x.shape))
-        bias0 = mpi.allbcast(bias0, comm=pm.comm)
-        bias0 = linalg.broadcast_to(bias0, eval(delta, lambda x : x.shape))
-        bias1 = mpi.allbcast(bias1, comm=pm.comm)
-        bias1 = linalg.broadcast_to(bias1, eval(delta, lambda x : x.shape))
+        mu = mpi.allbcast(mu, comm=pm.comm)
+        mu = linalg.broadcast_to(mu, eval(delta, lambda x : x.shape))
+        b1 = mpi.allbcast(b1, comm=pm.comm)
+        b1 = linalg.broadcast_to(b1, eval(delta, lambda x : x.shape))
+        b0 = mpi.allbcast(b0, comm=pm.comm)
+        b0 = linalg.broadcast_to(b0, eval(delta, lambda x : x.shape))
     
         #Field transformation
-        F = ReLU(bias0 * (delta+1e-8) ** gamma + bias1)
+        F = ReLU(b1 * (delta+1e-8) ** mu + b0) #definition of b0 is different from the paper
     else:
         F = delta
     

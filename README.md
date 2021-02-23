@@ -40,7 +40,8 @@ python LDL.py --target=tSZ_ne --TNGpath=TNG_PATH --TNGDarkpath=TNGDARK_PATH --sn
 python LDL.py --target=tSZ_T --TNGpath=TNG_PATH --TNGDarkpath=TNGDARK_PATH --snapNum=99 --Nmesh=625 --Nstep=2 --n=1 --save=SAVE_PATH --restore_ne=PARAM_NE_PATH 
 ```
 
-Note: For the first time training, the code needs to read TNG data from HDF5 files for painting the target map. This part does not support MPI (only rank 0 reads the files, and the other ranks wait), and is quite slow (depending on the data type and redshift). To paint the target map it also needs to load in all the particles, which takes lots of memory (more than the training code). The target map will be saved, and for the next time the map will be directly loaded without the need of reading the particles and painting the map. In other words, the first time training takes more time and memory because it needs to read the hydro particles and paint the target map.
+Note 1: For the first time training, the code needs to read TNG data from HDF5 files for painting the target map. This part does not support MPI (only rank 0 reads the files, and the other ranks wait), and is quite slow (depending on the data type and redshift). To paint the target map it also needs to load in all the particles, which takes lots of memory (more than the training code). The target map will be saved, and for the next time the map will be directly loaded without the need of reading the particles and painting the map. In other words, the first time training takes more time and memory because it needs to read the hydro particles and paint the target map.
+Note 2: The training of LDL depends on the starting point x0, since the likelihood is not convex, and the BFGS optimizer only finds the local minima. If the results are not satisfying, try changing the values of x0 and train again.
 
 ## Evaluation
 
